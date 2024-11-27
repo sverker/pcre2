@@ -762,7 +762,7 @@ if ((heapframe *)((char *)N + frame_size) >= frames_top)
   another frame, so do a final check. */
 
   if (newsize - usedsize < frame_size) return PCRE2_ERROR_HEAPLIMIT;
-  new = match_data->memctl.malloc(newsize, match_data->memctl.memory_data);
+  new = match_data->memctl.malloc(newsize+frame_size, match_data->memctl.memory_data);
   if (new == NULL) return PCRE2_ERROR_NOMEMORY;
   memcpy(new, match_data->heapframes, usedsize);
 
@@ -6571,29 +6571,45 @@ switch (Freturn_id)
 #ifdef ERLANG_INTEGRATION
 LOOP_COUNT_RETURN:
   /* Restore the saved register variables in the upper dummy frame, description below */
- {
-   heapframe *newframe = F;
-   F = newframe->Xprevframe;
-   rrc = newframe->op; 
-   i = newframe->Xfi;
-   c = (uint32_t) newframe->Xfc;
-   utf = newframe->temp[0];
-   minimize = newframe->temp[1];
-   possessive = newframe->temp[2];
-   caseless = (BOOL) newframe->Xcodelink;
-   condcode = newframe->Xctype;
-   /* Note, the frame is not freed until the whole match is done, 
-      the function release_match_heapframes takes care of that */
-   EDEBUGF(("LOOP_COUNT_RETURN: %d",frame->return_id));
-   switch (frame->return_id) 
-     {
+{
+  match_local_variable_store *store = F;
+  F = (heapframe*)store - 1;
+  frames_top = store->frames_top;
+  assert_accept_frame = store->assert_accept_frame;
+  frame_copy_size = store->frame_copy_size;
+  branch_end = store->branch_end;
+  branch_start = store->branch_start;
+  bracode = store->bracode;
+  offset = store->offset;
+  length = store->length;
+
+  rrc = store->rrc;
+  i = store->i;
+  fc = store->fc;
+  number = store->number;
+  reptype = store->reptype;
+  group_frame_type = store->group_frame_type;
+  condition = store->condition;
+  cur_is_word = store->cur_is_word;
+  prev_is_word = store->prev_is_word;
+  utf = store->utf;
+  ucp = store->ucp;
+  proptype = store->proptype;
+  lgb = store->elgb;
+  rgb = store->ergb;
+
+  /* Note, the frame is not freed until the whole match is done, 
+     the function release_match_heapframes takes care of that */
+  EDEBUGF(("LOOP_COUNT_RETURN: %d",F->return_id));
+  switch (F->return_id) 
+    {
 // TODO create and include this after we added COST_CHK in the code
 //#include "pcre_exec_loop_break_cases.inc"
      default:
-       DPRINTF(("jump error in pcre match: label %d non-existent\n", frame->Xwhere));
-       return PCRE_ERROR_INTERNAL;
+       DPRINTF(("jump error in pcre match: label %d non-existent\n", F->return_id));
+       return PCRE2_ERROR_INTERNAL;
      }
- }
+}
 
 LOOP_COUNT_BREAK:
   /* Save the local register variables in a dummy frame, to keep the 
@@ -6601,41 +6617,36 @@ LOOP_COUNT_BREAK:
   /* 
    * Store Local                    in
    * ------------------------------ --------------
-   * // Flast_group_offset, Fcurrent_recurse, Fecode, Frdepth,
-   *// Fstart_match, Fmark, Foffset_top, Fcapture_last, Fgroup_frame_type, 
-   * // Feptr, Fback_frame, Fovector, Freturn_id
-   * rrc                            Xop
-   * i                              Xfi
-   * c                              Xfc (cast)
-   * utf                            Xcur_is_word
-   * minimize                       Xcondition
-   * possessive                     Xprev_is_word
-   * caseless                       Xcodelink (cast)
-   * condcode                       Xctype
    */ 
-  {   
-    heapframe *newframe = frame->Xnextframe; 
-    if (newframe == NULL)
-    {
-      newframe = match_data->memctl.malloc(frame_size, match_data->memctl.memory_data);
-      newframe = (heapframe *)(PUBL(stack_malloc))(sizeof(heapframe));
-      if (newframe == NULL) RRETURN(PCRE_ERROR_NOMEMORY);
-      newframe->Xnextframe = NULL;
-      frame->Xnextframe = newframe;
-    }
-    newframe->Xprevframe = frame;
-    newframe->Xop = rrc; 
-    newframe->Xfi = i;
-    newframe->Xfc = (unsigned int) c;
-    newframe->Xcur_is_word = utf;
-    newframe->Xcondition = minimize;
-    newframe->Xprev_is_word = possessive;
-    newframe->Xcodelink = (int) caseless;
-    newframe->Xctype = condcode;
+  {
+    heapframe *newframe = F + 1;
+    match_local_variable_store *store = (match_local_variable_store *) newframe;
+    store->frames_top = frames_top;
+    store->assert_accept_frame = assert_accept_frame;
+    store->frame_copy_size = frame_copy_size;
+    store->branch_end = branch_end;
+    store->branch_start = branch_start;
+    store->bracode = bracode;
+    store->offset = offset;
+    store->length = length;
+    store->rrc = rrc;
+    store->i = i;
+    store->fc = fc;
+    store->number = number;
+    store->reptype = reptype;
+    store->group_frame_type = group_frame_type;
+    store->condition = condition;
+    store->cur_is_word = cur_is_word;
+    store->prev_is_word = prev_is_word;
+    store->utf = utf;
+    store->ucp = ucp;
+    store->proptype = proptype;
+    store->elgb = lgb;
+    store->ergb = rgb;
     mb->state_save = newframe;
     mb->loop_limit = 0;
     EDEBUGF(("Break loop!"));
-    return PCRE_ERROR_LOOP_LIMIT;
+    return PCRE2_ERROR_LOOP_LIMIT;
   }
 #endif 
 }
@@ -6650,9 +6661,9 @@ typedef struct {
     BOOL Xhas_first_cu;
     BOOL Xhas_req_cu;
     PCRE2_UCHAR Xfirst_cu;
-    PCRE2_UCHAR Xfirst_cu;
+    PCRE2_UCHAR Xfirst_cu2;
     PCRE2_UCHAR Xreq_cu;
-    PCRE2_UCHAR Xreq_cu;
+    PCRE2_UCHAR Xreq_cu2;
     pcre2_match_data Xmatch_block;
     pcre2_match_data *Xmb;
     const uint8_t *Xtables;
@@ -6662,7 +6673,6 @@ typedef struct {
     PCRE2_SPTR Xstart_partial;
     PCRE2_SPTR Xmatch_partial;
     PCRE2_SPTR Xreq_cu_ptr;
-    const pcre_study_data *Xstudy;
     pcre2_real_code *Xre;
     heapframe Xframe_zero; /* Always NO_RECURSE */
 
@@ -6674,8 +6684,8 @@ typedef struct {
     PCRE2_SPTR Xsubject;
     PCRE2_SIZE Xlength;
     PCRE2_SIZE Xstart_offset;
-    pcre2_match_data Xmatch_data;
-    pcre2_match_context Xmcontext;
+    pcre2_match_data *Xmatch_data;
+    pcre2_match_context *Xmcontext;
 } PcreExecContext;
 #endif  
 
@@ -6848,7 +6858,7 @@ int rc;
 /* Variables that we swap in and out */
 BOOL utf;
 PCRE2_UCHAR first_cu;
-const uint8 *start_bits;
+const uint8_t *start_bits;
 PCRE2_SPTR end_subject = NULL;
 PCRE2_SPTR req_cu_ptr;
 PCRE2_UCHAR req_cu;
@@ -6856,7 +6866,6 @@ PCRE2_UCHAR req_cu;
 /* End special swapped variables */
 pcre2_real_match_context *extra_data = (pcre2_real_match_context *)mcontext;
  if (extra_data != NULL && 
-     (extra_data->flags & PCRE_EXTRA_LOOP_LIMIT) && 
      *(extra_data->restart_data) != NULL) {
      /* we are restarting, every initialization is skipped and we jump directly into the loop */
    exec_context = (PcreExecContext *) *(extra_data->restart_data);
@@ -6865,9 +6874,9 @@ pcre2_real_match_context *extra_data = (pcre2_real_match_context *)mcontext;
        goto restart_valid_utf;
    goto RESTART_INTERRUPTED;
  } else {
-   if (extra_data != NULL && 
-       (extra_data->flags & PCRE_EXTRA_LOOP_LIMIT)) {
-     exec_context = (PcreExecContext *) (erts_pcre_malloc)(sizeof(PcreExecContext));
+   if (extra_data != NULL) {
+     exec_context = (PcreExecContext *) (extra_data->memctl.malloc(sizeof(PcreExecContext),
+        extra_data->memctl.memory_data));
      *(extra_data->restart_data) = (void *) exec_context;
      exec_context->valid_utf_ystate.yielded = 0;
      /* need freeing by special routine from client */
@@ -7024,6 +7033,7 @@ if (use_jit)
       return PCRE2_ERROR_UTF16_ERR3;  /* Isolated low surrogate */
 #endif
       }
+
 #endif  /* WIDTH != 32 */
 
     /* Move back by the maximum lookbehind, just in case it happens at the very
@@ -7349,14 +7359,11 @@ mb->match_limit = (mcontext->match_limit < re->limit_match)?
 mb->match_limit_depth = (mcontext->depth_limit < re->limit_depth)?
   mcontext->depth_limit : re->limit_depth;
 #ifdef ERLANG_INTEGRATION
-  if ((mcontext->flags & PCRE_EXTRA_LOOP_LIMIT) != 0) 
-    {
         mb->loop_limit = mcontext->loop_limit;
         if (mcontext->restart_data)
             mb->loop_limit -= exec_context->valid_utf_ystate.cnt;
         if (mb->loop_limit < 10)
             mb->loop_limit = 10; /* At least do something if we've come this far... */
-    }
 #endif
 /* If a pattern has very many capturing parentheses, the frame size may be very
 large. Set the initial frame vector size to ensure that there are at least 10

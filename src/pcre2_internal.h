@@ -201,6 +201,13 @@ code that a non-static object is being referenced. */
 #endif
 //#endif
 
+struct PRIV(valid_utf_ystate) { 
+    unsigned int cnt;
+    int length;
+    int yielded;
+    PCRE2_SPTR p;
+};
+
 /* When compiling for use with the Virtual Pascal compiler, these functions
 need to have their names changed. PCRE2 must be compiled with the -DVPCOMPAT
 option on the command line. */

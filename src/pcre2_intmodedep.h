@@ -597,10 +597,9 @@ typedef struct pcre2_real_match_context {
   unsigned long *loop_counter_return;
   void **restart_data; /* in/out */
   int restart_flags;
-} pcre2_real_match_context; //TODO add erts_ prefix
-#else
-} pcre2_real_match_context;
 #endif
+} pcre2_real_match_context; //TODO add erts_ prefix
+
 /* The real convert context structure. */
 
 typedef struct pcre2_real_convert_context {
@@ -852,6 +851,38 @@ typedef struct heapframe {
   PCRE2_SIZE ovector[131072];   /* Must be last in the structure */
 } heapframe;
 
+typedef struct match_local_variable_store{
+  heapframe *frames_top;  /* End of frames vector */
+  heapframe *assert_accept_frame;  /* For passing back a frame with captures */
+  PCRE2_SIZE frame_copy_size;   /* Amount to copy when creating a new frame */
+
+/* Local variables that do not need to be preserved over calls to RRMATCH(). */
+
+  PCRE2_SPTR branch_end;
+  PCRE2_SPTR branch_start;
+  PCRE2_SPTR bracode;     /* Temp pointer to start of group */
+  PCRE2_SIZE offset;      /* Used for group offsets */
+  PCRE2_SIZE length;      /* Used for various length calculations */
+
+  int rrc;                /* Return from functions & backtracking "recursions" */
+  #ifdef SUPPORT_UNICODE
+  int proptype;           /* Type of character property */
+  BOOL utf;
+  BOOL ucp;
+  #endif
+
+  uint32_t i;             /* Used for local loops */
+  uint32_t fc;            /* Character values */
+  uint32_t number;        /* Used for group and other numbers */
+  uint32_t reptype;   /* Type of repetition (0 to avoid compiler warning) */
+  uint32_t group_frame_type;  /* Specifies type for new group frames */
+
+  BOOL condition;         /* Used in conditional groups */
+  BOOL cur_is_word;       /* Used in "word" tests */
+  BOOL prev_is_word;      /* Used in "word" tests */
+  int elgb;
+  int ergb;
+} match_local_variable_store;
 /* This typedef is a check that the size of the heapframe structure is a
 multiple of PCRE2_SIZE. See various comments above. */
 
