@@ -190,10 +190,16 @@ libraries are always referenced using the PRIV macro. This makes it possible
 for pcre2test.c to include some of the source files from the libraries using a
 different PRIV definition to avoid name clashes. It also makes it clear in the
 code that a non-static object is being referenced. */
-
+/*#if defined(ERLANG_INTEGRATION)
+#ifndef PRIV
+#define PRIV(name) _erts_pcre_##name
+#endif
+#else
+*/
 #ifndef PRIV
 #define PRIV(name) _pcre2_##name
 #endif
+//#endif
 
 /* When compiling for use with the Virtual Pascal compiler, these functions
 need to have their names changed. PCRE2 must be compiled with the -DVPCOMPAT

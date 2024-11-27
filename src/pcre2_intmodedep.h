@@ -592,8 +592,15 @@ typedef struct pcre2_real_match_context {
   uint32_t heap_limit;
   uint32_t match_limit;
   uint32_t depth_limit;
+#if defined(ERLANG_INTEGRATION)
+  unsigned long int loop_limit;
+  unsigned long *loop_counter_return;
+  void **restart_data; /* in/out */
+  int restart_flags;
+} pcre2_real_match_context; //TODO add erts_ prefix
+#else
 } pcre2_real_match_context;
-
+#endif
 /* The real convert context structure. */
 
 typedef struct pcre2_real_convert_context {
@@ -838,6 +845,10 @@ typedef struct heapframe {
   uint32_t capture_last;        /* Most recent capture */
   PCRE2_SIZE last_group_offset; /* Saved offset to most recent group frame */
   PCRE2_SIZE offset_top;        /* Offset after highest capture */
+#if defined(ERLANG_INTEGRATION)
+  int lgb;
+  int rgb;
+#endif
   PCRE2_SIZE ovector[131072];   /* Must be last in the structure */
 } heapframe;
 
@@ -862,6 +873,10 @@ typedef struct heapframe_align {
 doing traditional NFA matching (pcre2_match() and friends). */
 
 typedef struct match_block {
+#if defined(ERLANG_INTEGRATION)
+  unsigned long int loop_limit;
+  void *state_save;
+#endif
   pcre2_memctl memctl;            /* For general use */
   uint32_t heap_limit;            /* As it says */
   uint32_t match_limit;           /* As it says */

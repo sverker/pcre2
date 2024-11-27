@@ -249,7 +249,22 @@ for (i = 0, Q = match_data->heapframes;
 
 #endif
 
+#ifdef ERLANG_INTEGRATION
+#ifdef ERLANG_DEBUG
+#include <stdarg.h>
+static void
+edebug_printf(const char *format, ...)
+{
+  va_list args;
 
+  va_start(args, format);
+  fprintf(stderr, "PCRE: ");
+  vfprintf(stderr, format, args);
+  va_end(args);
+  fprintf(stderr, "\r\n");
+}
+#endif
+#endif
 
 /*************************************************
 *                Process a callout               *
@@ -554,14 +569,23 @@ remember the backtracking points. */
   goto MATCH_RECURSE;\
   L_##rb:;\
   }
-
+#ifdef ERLANG_INTEGRATION
+#define RRETURN(ra)\
+  {\
+  rrc = ra;\
+  if (LOOP_LIMIT != 0) \
+  { \
+    mb->loop_limit -= LOOP_COUNT; \
+  } \
+  goto RETURN_SWITCH;\
+  }
+#else
 #define RRETURN(ra)\
   {\
   rrc = ra;\
   goto RETURN_SWITCH;\
   }
-
-
+#endif
 
 /*************************************************
 *         Match from current position            *
@@ -627,6 +651,35 @@ BOOL condition;         /* Used in conditional groups */
 BOOL cur_is_word;       /* Used in "word" tests */
 BOOL prev_is_word;      /* Used in "word" tests */
 
+#ifdef ERLANG_INTEGRATION
+#define LOOP_COUNT loop_count
+#define LOOP_LIMIT loop_limit
+#ifdef ERLANG_DEBUG
+#define EDEBUGF(X) edebug_printf X
+#else
+#define EDEBUGF(X)
+#endif
+#define COST(N) (LOOP_COUNT += (N))
+#define LABEL_XCAT(A,B) A##B
+#define LABEL_CAT(A,B) LABEL_XCAT(A,B)
+
+#define COST_CHK(N) 				\
+do {						\
+  LOOP_COUNT += (N);				\
+  if (LOOP_LIMIT != 0) {			\
+    if (LOOP_COUNT > LOOP_LIMIT) {              \
+      Freturn_id = __LINE__ + 100;	        \
+      goto LOOP_COUNT_BREAK;			\
+      LABEL_CAT(L_LOOP_COUNT_,__LINE__):	\
+      ;                                         \
+    }						\
+  }						\
+} while (0)
+
+register int loop_count = 0;
+register int loop_limit = mb->loop_limit;
+#endif
+
 /* UTF and UCP flags */
 
 #ifdef SUPPORT_UNICODE
@@ -642,8 +695,19 @@ copied when a new frame is created. */
 frame_copy_size = frame_size - offsetof(heapframe, eptr);
 
 /* Set up the first frame and the end of the frames vector. */
-
+#ifdef ERLANG_INTEGRATION
+if (mb->state_save) {
+  F = mb->state_save;
+  EDEBUGF(("Break restore!"));
+  goto LOOP_COUNT_RETURN;
+}
 F = match_data->heapframes;
+#else
+#define COST(N)
+#define COST_CHK(N)
+F = match_data->heapframes;
+#endif
+
 frames_top = (heapframe *)((char *)F + match_data->heapframes_size);
 
 Frdepth = 0;                        /* "Recursion" depth */
@@ -786,14 +850,17 @@ if (Frdepth >= mb->match_limit_depth) return PCRE2_ERROR_DEPTHLIMIT;
 fprintf(stderr, "\n++ New frame: type=0x%x subject offset %ld\n",
   GF_IDMASK(Fgroup_frame_type), Feptr - mb->start_subject);
 #endif
-
+#if defined(ERLANG_INTEGRATION)
+#define lgb                F->lgb
+#define rgb                F->rgb
+#endif
 for (;;)
   {
 #ifdef DEBUG_SHOW_OPS
 fprintf(stderr, "++ %2ld op=%3d %s\n", Fecode - mb->start_code, *Fecode,
   OP_names[*Fecode]);
 #endif
-
+  COST_CHK(1);
   Fop = (uint8_t)(*Fecode);  /* Cast needed for 16-bit and 32-bit modes */
   switch(Fop)
     {
@@ -4430,7 +4497,9 @@ fprintf(stderr, "++ %2ld op=%3d %s\n", Fecode - mb->start_code, *Fecode,
 
         for(;;)
           {
+#ifndef ERLANG_INTEGRATION
           int lgb, rgb;
+#endif
           PCRE2_SPTR fptr;
 
           if (Feptr <= Lstart_eptr) break;   /* At start of char run */
@@ -6499,8 +6568,116 @@ switch (Freturn_id)
   return PCRE2_ERROR_INTERNAL;
   }
 #undef LBL
-}
+#ifdef ERLANG_INTEGRATION
+LOOP_COUNT_RETURN:
+  /* Restore the saved register variables in the upper dummy frame, description below */
+ {
+   heapframe *newframe = F;
+   F = newframe->Xprevframe;
+   rrc = newframe->op; 
+   i = newframe->Xfi;
+   c = (uint32_t) newframe->Xfc;
+   utf = newframe->temp[0];
+   minimize = newframe->temp[1];
+   possessive = newframe->temp[2];
+   caseless = (BOOL) newframe->Xcodelink;
+   condcode = newframe->Xctype;
+   /* Note, the frame is not freed until the whole match is done, 
+      the function release_match_heapframes takes care of that */
+   EDEBUGF(("LOOP_COUNT_RETURN: %d",frame->return_id));
+   switch (frame->return_id) 
+     {
+// TODO create and include this after we added COST_CHK in the code
+//#include "pcre_exec_loop_break_cases.inc"
+     default:
+       DPRINTF(("jump error in pcre match: label %d non-existent\n", frame->Xwhere));
+       return PCRE_ERROR_INTERNAL;
+     }
+ }
 
+LOOP_COUNT_BREAK:
+  /* Save the local register variables in a dummy frame, to keep the 
+   * every frame of equal size rule */
+  /* 
+   * Store Local                    in
+   * ------------------------------ --------------
+   * // Flast_group_offset, Fcurrent_recurse, Fecode, Frdepth,
+   *// Fstart_match, Fmark, Foffset_top, Fcapture_last, Fgroup_frame_type, 
+   * // Feptr, Fback_frame, Fovector, Freturn_id
+   * rrc                            Xop
+   * i                              Xfi
+   * c                              Xfc (cast)
+   * utf                            Xcur_is_word
+   * minimize                       Xcondition
+   * possessive                     Xprev_is_word
+   * caseless                       Xcodelink (cast)
+   * condcode                       Xctype
+   */ 
+  {   
+    heapframe *newframe = frame->Xnextframe; 
+    if (newframe == NULL)
+    {
+      newframe = match_data->memctl.malloc(frame_size, match_data->memctl.memory_data);
+      newframe = (heapframe *)(PUBL(stack_malloc))(sizeof(heapframe));
+      if (newframe == NULL) RRETURN(PCRE_ERROR_NOMEMORY);
+      newframe->Xnextframe = NULL;
+      frame->Xnextframe = newframe;
+    }
+    newframe->Xprevframe = frame;
+    newframe->Xop = rrc; 
+    newframe->Xfi = i;
+    newframe->Xfc = (unsigned int) c;
+    newframe->Xcur_is_word = utf;
+    newframe->Xcondition = minimize;
+    newframe->Xprev_is_word = possessive;
+    newframe->Xcodelink = (int) caseless;
+    newframe->Xctype = condcode;
+    mb->state_save = newframe;
+    mb->loop_limit = 0;
+    EDEBUGF(("Break loop!"));
+    return PCRE_ERROR_LOOP_LIMIT;
+  }
+#endif 
+}
+#ifdef ERLANG_INTEGRATION
+typedef struct {
+    int Xarg_offset_max;
+    BOOL Xusing_temporary_offsets;
+    BOOL Xanchored;
+    BOOL Xstartline;
+    BOOL Xfirstline;
+    BOOL Xutf;
+    BOOL Xhas_first_cu;
+    BOOL Xhas_req_cu;
+    PCRE2_UCHAR Xfirst_cu;
+    PCRE2_UCHAR Xfirst_cu;
+    PCRE2_UCHAR Xreq_cu;
+    PCRE2_UCHAR Xreq_cu;
+    pcre2_match_data Xmatch_block;
+    pcre2_match_data *Xmb;
+    const uint8_t *Xtables;
+    const uint8_t *Xstart_bits;
+    PCRE2_SPTR Xstart_match;
+    PCRE2_SPTR Xend_subject;
+    PCRE2_SPTR Xstart_partial;
+    PCRE2_SPTR Xmatch_partial;
+    PCRE2_SPTR Xreq_cu_ptr;
+    const pcre_study_data *Xstudy;
+    pcre2_real_code *Xre;
+    heapframe Xframe_zero; /* Always NO_RECURSE */
+
+    /* for yield in valid_utf() */
+
+    struct PRIV(valid_utf_ystate) valid_utf_ystate;
+    
+    /* Original function parameters that need be saved */;
+    PCRE2_SPTR Xsubject;
+    PCRE2_SIZE Xlength;
+    PCRE2_SIZE Xstart_offset;
+    pcre2_match_data Xmatch_data;
+    pcre2_match_context Xmcontext;
+} PcreExecContext;
+#endif  
 
 /*************************************************
 *           Match a Regular Expression           *
@@ -6531,6 +6708,8 @@ pcre2_match(const pcre2_code *code, PCRE2_SPTR subject, PCRE2_SIZE length,
   PCRE2_SIZE start_offset, uint32_t options, pcre2_match_data *match_data,
   pcre2_match_context *mcontext)
 {
+#ifndef ERLANG_INTEGRATION
+#define ERTS_UPDATE_CONSUMED(X,MB)
 int rc;
 int was_zero_terminated = 0;
 const uint8_t *start_bits = NULL;
@@ -6591,6 +6770,133 @@ match_block *mb = &actual_match_block;
 /* Recognize NULL, length 0 as an empty string. */
 
 if (subject == NULL && length == 0) subject = (PCRE2_SPTR)"";
+start_match = subject + start_offset;
+req_cu_ptr = start_match - 1;
+#else /* ERLANG_INTEGRATION */
+/* "local" variables in faked stackframe instead */
+#define re (exec_context->Xre)
+#define anchored (exec_context->Xanchored)
+#define firstline (exec_context->Xfirstline)
+#define has_first_cu (exec_context->Xhas_first_cu)
+#define has_req_cu (exec_context->Xhas_req_cu)
+#define startline (exec_context->Xstartline)
+#define first_cu2 (exec_context->Xfirst_cu2)
+#define req_cu2 (exec_context->Xreq_cu2)
+#define start_match (exec_context->Xstart_match)
+#define start_partial (exec_context->Xstart_partial)
+#define match_partial (exec_context->Xmatch_partial)
+#define match_block (exec_context->Xmatch_block)
+#define mb (exec_context->Xmb)
+
+#define SWAPIN() do {				                    \
+  utf = exec_context->Xutf;			                \
+  first_cu = exec_context->Xfirst_cu;   	      \
+  start_bits = exec_context->Xstart_bits;	      \
+  end_subject = exec_context->Xend_subject;	    \
+  req_cu_ptr = exec_context->Xreq_cu_ptr;	      \
+  req_cu = exec_context->Xreq_cu;               \
+  re = exec_context->Xre;                       \
+  /* Parameters */                              \
+  subject = exec_context->Xsubject;             \
+  length = exec_context->Xlength;               \
+  start_offset = exec_context->Xstart_offset;   \
+  match_data = exec_context->Xmatch_data;       \
+  mcontext = exec_context->Xmcontext;           \
+} while (0)
+
+#define SWAPOUT() do {				                  \
+  exec_context->Xutf = utf;		                  \
+  exec_context->Xfirst_cu = first_cu;   	      \
+  exec_context->Xstart_bits = start_bits;	      \
+  exec_context->Xend_subject = end_subject;	    \
+  exec_context->Xreq_cu_ptr = req_cu_ptr;	      \
+  exec_context->Xreq_cu = req_cu;               \
+  /* Parameters */                              \
+  exec_context->Xsubject = subject;             \
+  exec_context->Xlength = length;               \
+  exec_context->Xstart_offset = setstart_offset;   \
+  exec_context->Xmatch_data = match_data;       \
+  exec_context->Xmcontext = mcontext;           \
+} while (0)
+
+#define ERTS_UPDATE_CONSUMED(X, MB)                                 \
+do {                                                                \
+    if (((X)->flags & PCRE2_EXTRA_LOOP_LIMIT) != 0) {                \
+        unsigned long consumed__;                                   \
+        if (!(X)->restart_data) {                                   \
+            consumed__ = 0;                                         \
+        }                                                           \
+        else {                                                      \
+            PcreExecContext *ctx__ = (PcreExecContext *)            \
+                (*(X)->restart_data);                               \
+            consumed__ = ctx__->valid_utf_ystate.cnt;               \
+            ctx__->valid_utf_ystate.cnt = 0;                        \
+        }                                                           \
+        if ((MB)) {                                                 \
+            match_block *mb__ = (MB);                                \
+            consumed__ += (X)->loop_limit - mb__->loop_limit;       \
+        }                                                           \
+        *((X)->loop_counter_return) = consumed__;                   \
+    }                                                               \
+} while (0)
+PcreExecContext *exec_context;
+PcreExecContext internal_context;
+
+/* Locals that need never be saved */
+int rc;
+
+/* Variables that we swap in and out */
+BOOL utf;
+PCRE2_UCHAR first_cu;
+const uint8 *start_bits;
+PCRE2_SPTR end_subject = NULL;
+PCRE2_SPTR req_cu_ptr;
+PCRE2_UCHAR req_cu;
+
+/* End special swapped variables */
+pcre2_real_match_context *extra_data = (pcre2_real_match_context *)mcontext;
+ if (extra_data != NULL && 
+     (extra_data->flags & PCRE_EXTRA_LOOP_LIMIT) && 
+     *(extra_data->restart_data) != NULL) {
+     /* we are restarting, every initialization is skipped and we jump directly into the loop */
+   exec_context = (PcreExecContext *) *(extra_data->restart_data);
+   SWAPIN();
+   if (exec_context->valid_utf_ystate.yielded)
+       goto restart_valid_utf;
+   goto RESTART_INTERRUPTED;
+ } else {
+   if (extra_data != NULL && 
+       (extra_data->flags & PCRE_EXTRA_LOOP_LIMIT)) {
+     exec_context = (PcreExecContext *) (erts_pcre_malloc)(sizeof(PcreExecContext));
+     *(extra_data->restart_data) = (void *) exec_context;
+     exec_context->valid_utf_ystate.yielded = 0;
+     /* need freeing by special routine from client */
+   } else {
+#if defined(ERLANG_INTEGRATION)
+     fprintf(stderr, "Unexpected execution path\n");
+     abort();
+#endif
+     exec_context = &internal_context;
+   }
+   
+   /* OK, no restart here, initialize variables instead */
+   has_first_cu = FALSE;
+   has_req_cu = FALSE;
+   first_cu = 0;
+   first_cu2 = 0;
+   req_cu = 0;
+   req_cu2 = 0;
+   mb = &actual_match_block;
+   start_bits = NULL;
+   start_match = (PCRE2_SPTR)subject + start_offset;
+   start_partial = NULL;
+   match_partial = NULL;
+   req_cu_ptr = start_match - 1;
+   re = (const pcre2_real_code *)code;
+
+   mb->state_save = NULL; 
+}
+#endif /* ERLANG_INTEGRATION */
 
 /* Plausibility checks */
 
@@ -6598,8 +6904,6 @@ if ((options & ~PUBLIC_MATCH_OPTIONS) != 0) return PCRE2_ERROR_BADOPTION;
 if (code == NULL || subject == NULL || match_data == NULL)
   return PCRE2_ERROR_NULL;
 
-start_match = subject + start_offset;
-req_cu_ptr = start_match - 1;
 if (length == PCRE2_ZERO_TERMINATED)
   {
   length = PRIV(strlen)(subject);
@@ -7044,7 +7348,16 @@ mb->match_limit = (mcontext->match_limit < re->limit_match)?
 
 mb->match_limit_depth = (mcontext->depth_limit < re->limit_depth)?
   mcontext->depth_limit : re->limit_depth;
-
+#ifdef ERLANG_INTEGRATION
+  if ((mcontext->flags & PCRE_EXTRA_LOOP_LIMIT) != 0) 
+    {
+        mb->loop_limit = mcontext->loop_limit;
+        if (mcontext->restart_data)
+            mb->loop_limit -= exec_context->valid_utf_ystate.cnt;
+        if (mb->loop_limit < 10)
+            mb->loop_limit = 10; /* At least do something if we've come this far... */
+    }
+#endif
 /* If a pattern has very many capturing parentheses, the frame size may be very
 large. Set the initial frame vector size to ensure that there are at least 10
 available frames, but enforce a minimum of START_FRAMES_SIZE. If this is
@@ -7517,6 +7830,20 @@ for(;;)
 #ifdef DEBUG_SHOW_OPS
   fprintf(stderr, "++ match() returned %d\n\n", rc);
 #endif
+#ifdef ERLANG_INTEGRATION
+  ERTS_UPDATE_CONSUMED(extra_data, mb);
+  SWAPOUT();
+  while(rc == PCRE2_ERROR_LOOP_LIMIT) {
+      EDEBUGF(("Loop limit break detected"));
+      return PCRE2_ERROR_LOOP_LIMIT;
+  RESTART_INTERRUPTED:
+      mb->loop_limit = extra_data->loop_limit;
+      rc = match(NULL,NULL,NULL,0,md,NULL,0);
+      *extra_data->loop_counter_return = 
+	  (extra_data->loop_limit - mb->loop_limit);
+  }
+  mb->state_save = NULL; /* So that next call to free_saved... does not crash */
+#endif
 
   if (mb->hitend && start_partial == NULL)
     {
@@ -7767,6 +8094,40 @@ else match_data->rc = PCRE2_ERROR_NOMATCH;
 
 return match_data->rc;
 }
+
+#if defined(ERLANG_INTEGRATION)
+#undef arg_offset_max
+#undef using_temporary_offsets
+#undef anchored
+#undef startline
+#undef firstline
+#undef has_first_cu
+#undef has_req_cu
+#undef first_cu2
+#undef req_cu
+#undef req_cu2
+#undef match_block
+#undef mb
+#undef start_match
+#undef start_partial
+#undef match_partial
+#undef study
+#undef re
+#undef frame_zero
+
+void erts_pcre_free_restart_data(void *restart_data) {
+  PcreExecContext *top = (PcreExecContext *) restart_data;
+  /* We might be done, or we might not, so there might be some saved match_states here */
+  if (top != NULL) {
+    match_block *mb = top->Xmb;
+    if (top->Xusing_temporary_offsets && mb->offset_vector != NULL) {
+	(PUBL(free))(mb->offset_vector);
+    }
+    release_match_heapframes(&(top->Xframe_zero));
+    (PUBL(free))(top);
+  }
+}
+#endif
 
 /* These #undefs are here to enable unity builds with CMake. */
 
