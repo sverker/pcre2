@@ -6604,7 +6604,7 @@ LOOP_COUNT_RETURN:
   switch (F->return_id) 
     {
 // TODO create and include this after we added COST_CHK in the code
-//#include "pcre_exec_loop_break_cases.inc"
+//#include "pcre2_exec_loop_break_cases.inc"
      default:
        EDEBUGF(("jump error in pcre match: label %d non-existent\n", F->return_id));
        return PCRE2_ERROR_INTERNAL;
@@ -6673,7 +6673,7 @@ typedef struct {
     PCRE2_SPTR Xstart_partial;
     PCRE2_SPTR Xmatch_partial;
     PCRE2_SPTR Xreq_cu_ptr;
-    pcre2_real_code *Xre;
+    const pcre2_real_code *Xre;
     heapframe Xframe_zero; /* Always NO_RECURSE */
 
     /* for yield in valid_utf() */

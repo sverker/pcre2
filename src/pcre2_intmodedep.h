@@ -806,7 +806,11 @@ typedef struct heapframe {
   uint32_t rdepth;           /* Function "recursion" depth within pcre2_match() */
   uint32_t group_frame_type; /* Type information for group frames */
   uint32_t temp_32[4];       /* Used for short-term 32-bit or BOOL values */
+  #ifdef ERLANG_INTEGRATION
+  uint32_t return_id;        /* Where to go on in internal "return" */
+  #else
   uint8_t return_id;         /* Where to go on in internal "return" */
+  #endif
   uint8_t op;                /* Processing opcode */
 
   /* At this point, the structure is 16-bit aligned. On most architectures
