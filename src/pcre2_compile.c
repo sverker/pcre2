@@ -789,7 +789,8 @@ are allowed. */
     PCRE2_EXTRA_ESCAPED_CR_IS_LF|PCRE2_EXTRA_ALT_BSUX| \
     PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK|PCRE2_EXTRA_ASCII_BSD| \
     PCRE2_EXTRA_ASCII_BSS|PCRE2_EXTRA_ASCII_BSW|PCRE2_EXTRA_ASCII_POSIX| \
-    PCRE2_EXTRA_ASCII_DIGIT)
+    PCRE2_EXTRA_ASCII_DIGIT|\
+    PCRE2_EXTRA_LOOP_LIMIT)
 
 /* Compile time error code numbers. They are given names so that they can more
 easily be tracked. When a new number is added, the tables called eint1 and

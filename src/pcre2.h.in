@@ -159,6 +159,7 @@ D   is inspected during pcre2_dfa_match() execution
 #define PCRE2_EXTRA_ASCII_BSW                0x00000400u  /* C */
 #define PCRE2_EXTRA_ASCII_POSIX              0x00000800u  /* C */
 #define PCRE2_EXTRA_ASCII_DIGIT              0x00001000u  /* C */
+#define PCRE2_EXTRA_LOOP_LIMIT               0x00002000u
 
 /* These are for pcre2_jit_compile(). */
 
@@ -350,7 +351,7 @@ pcre2_pattern_convert(). */
 #define PCRE2_ERROR_UTF8_ERR19      (-21)
 #define PCRE2_ERROR_UTF8_ERR20      (-22)
 #define PCRE2_ERROR_UTF8_ERR21      (-23)
-
+#define PCRE2_ERROR_UTF8_YIELD      (-69)
 /* Error codes for UTF-16 validity checks */
 
 #define PCRE2_ERROR_UTF16_ERR1      (-24)
@@ -407,7 +408,7 @@ released, the numbers must not be changed. */
 #define PCRE2_ERROR_INTERNAL_DUPMATCH (-65)
 #define PCRE2_ERROR_DFA_UINVALID_UTF  (-66)
 #define PCRE2_ERROR_INVALIDOFFSET     (-67)
-
+#define PCRE2_ERROR_LOOP_LIMIT        (-68)
 
 /* Request types for pcre2_pattern_info() */
 

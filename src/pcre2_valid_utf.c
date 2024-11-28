@@ -67,6 +67,7 @@ PRIV(valid_utf)(PCRE2_SPTR string, PCRE2_SIZE length, PCRE2_SIZE *erroroffset)
 (void)erroroffset;
 return 0;
 }
+
 #else  /* UTF is supported */
 
 
@@ -93,9 +94,40 @@ Returns:       == 0    if the string is a valid UTF string
 int
 PRIV(valid_utf)(PCRE2_SPTR string, PCRE2_SIZE length, PCRE2_SIZE *erroroffset)
 {
+
+#if defined(ERLANG_INTEGRATION)
+    return PRIV(yielding_valid_utf)(string, length, erroroffset, NULL);
+}
+
+int
+PRIV(yielding_valid_utf)(PCRE2_SPTR string, PCRE2_SIZE length, PCRE2_SIZE *erroroffset, struct PRIV(valid_utf_ystate) *ystate)
+{
+#endif
 PCRE2_SPTR p;
 uint32_t c;
+#if defined(ERLANG_INTEGRATION)
+register long cnt;
 
+if (!ystate) {
+    cnt = -1;
+}
+else {
+    cnt = ystate->cnt;
+    if (ystate->yielded) {
+        p = ystate->p;
+        length = ystate->length;
+        ystate->yielded = 0;
+        if (length < 0){
+          (void) !0;
+          length = (int)(p - string);
+
+            goto restart_length;
+        }
+        else
+            goto restart_validate;
+    }
+}
+#endif
 /* ----------------- Check a UTF-8 string ----------------- */
 
 #if PCRE2_CODE_UNIT_WIDTH == 8
@@ -130,11 +162,26 @@ PCRE2_ERROR_UTF8_ERR19  Overlong 6-byte sequence (won't ever occur)
 PCRE2_ERROR_UTF8_ERR20  Isolated 0x80 byte (not within UTF-8 character)
 PCRE2_ERROR_UTF8_ERR21  Byte with the illegal value 0xfe or 0xff
 */
-
+restart_length:
 for (p = string; length > 0; p++)
   {
   uint32_t ab, d;
+#if defined(ERLANG_INTEGRATION)
 
+  if (cnt > 0 && --cnt == 0) {
+      /*
+       * Return with cnt set to amount consumed;
+       * i.e. same amount as at start...
+       */
+      ystate->yielded = !0;
+      ystate->length = length;
+      ystate->p = p;
+      return PCRE2_ERROR_UTF8_YIELD;
+  }
+
+  restart_validate:
+
+#endif
   c = *p;
   length--;
 
@@ -313,6 +360,13 @@ for (p = string; length > 0; p++)
     return (ab == 4)? PCRE2_ERROR_UTF8_ERR11 : PCRE2_ERROR_UTF8_ERR12;
     }
   }
+#if defined(ERLANG_INTEGRATION)
+  if (ystate) {
+      /* Return with cnt set to amount consumed... */
+      ystate->cnt -= cnt;
+      ystate->yielded = 0;
+  }
+#endif
 return 0;
 
 

@@ -6572,7 +6572,7 @@ switch (Freturn_id)
 LOOP_COUNT_RETURN:
   /* Restore the saved register variables in the upper dummy frame, description below */
 {
-  match_local_variable_store *store = F;
+  match_local_variable_store *store = (match_local_variable_store *)F;
   F = (heapframe*)store - 1;
   frames_top = store->frames_top;
   assert_accept_frame = store->assert_accept_frame;
@@ -6606,7 +6606,7 @@ LOOP_COUNT_RETURN:
 // TODO create and include this after we added COST_CHK in the code
 //#include "pcre_exec_loop_break_cases.inc"
      default:
-       DPRINTF(("jump error in pcre match: label %d non-existent\n", F->return_id));
+       EDEBUGF(("jump error in pcre match: label %d non-existent\n", F->return_id));
        return PCRE2_ERROR_INTERNAL;
      }
 }
@@ -6664,8 +6664,8 @@ typedef struct {
     PCRE2_UCHAR Xfirst_cu2;
     PCRE2_UCHAR Xreq_cu;
     PCRE2_UCHAR Xreq_cu2;
-    pcre2_match_data Xmatch_block;
-    pcre2_match_data *Xmb;
+    match_block Xmatch_block;
+    match_block *Xmb;
     const uint8_t *Xtables;
     const uint8_t *Xstart_bits;
     PCRE2_SPTR Xstart_match;
@@ -6795,7 +6795,7 @@ req_cu_ptr = start_match - 1;
 #define start_match (exec_context->Xstart_match)
 #define start_partial (exec_context->Xstart_partial)
 #define match_partial (exec_context->Xmatch_partial)
-#define match_block (exec_context->Xmatch_block)
+#define actual_match_block (exec_context->Xmatch_block)
 #define mb (exec_context->Xmb)
 
 #define SWAPIN() do {				                    \
@@ -6824,37 +6824,49 @@ req_cu_ptr = start_match - 1;
   /* Parameters */                              \
   exec_context->Xsubject = subject;             \
   exec_context->Xlength = length;               \
-  exec_context->Xstart_offset = setstart_offset;   \
+  exec_context->Xstart_offset = start_offset;   \
   exec_context->Xmatch_data = match_data;       \
   exec_context->Xmcontext = mcontext;           \
 } while (0)
 
-#define ERTS_UPDATE_CONSUMED(X, MB)                                 \
-do {                                                                \
-    if (((X)->flags & PCRE2_EXTRA_LOOP_LIMIT) != 0) {                \
-        unsigned long consumed__;                                   \
-        if (!(X)->restart_data) {                                   \
-            consumed__ = 0;                                         \
-        }                                                           \
-        else {                                                      \
-            PcreExecContext *ctx__ = (PcreExecContext *)            \
-                (*(X)->restart_data);                               \
-            consumed__ = ctx__->valid_utf_ystate.cnt;               \
-            ctx__->valid_utf_ystate.cnt = 0;                        \
-        }                                                           \
-        if ((MB)) {                                                 \
-            match_block *mb__ = (MB);                                \
-            consumed__ += (X)->loop_limit - mb__->loop_limit;       \
-        }                                                           \
-        *((X)->loop_counter_return) = consumed__;                   \
-    }                                                               \
+#define ERTS_UPDATE_CONSUMED(X, MB)                           \
+do {                                                          \
+  unsigned long consumed__;                                   \
+  if (!(X)->restart_data) {                                   \
+      consumed__ = 0;                                         \
+  }                                                           \
+  else {                                                      \
+      PcreExecContext *ctx__ = (PcreExecContext *)            \
+          (*(X)->restart_data);                               \
+      consumed__ = ctx__->valid_utf_ystate.cnt;               \
+      ctx__->valid_utf_ystate.cnt = 0;                        \
+  }                                                           \
+  if ((MB)) {                                                 \
+      match_block *mb__ = (MB);                               \
+      consumed__ += (X)->loop_limit - mb__->loop_limit;       \
+  }                                                           \
+  *((X)->loop_counter_return) = consumed__;                   \
 } while (0)
 PcreExecContext *exec_context;
 PcreExecContext internal_context;
 
 /* Locals that need never be saved */
 int rc;
-
+int was_zero_terminated = 0;
+#if PCRE2_CODE_UNIT_WIDTH == 8
+PCRE2_SPTR memchr_found_first_cu;
+PCRE2_SPTR memchr_found_first_cu2;
+#endif
+PCRE2_SPTR bumpalong_limit;
+PCRE2_SPTR true_end_subject;
+#ifdef SUPPORT_UNICODE
+BOOL ucp = FALSE;
+BOOL allow_invalid;
+uint32_t fragment_options = 0;
+#endif
+pcre2_callout_block cb;
+PCRE2_SIZE frame_size;
+PCRE2_SIZE heapframes_size;
 /* Variables that we swap in and out */
 BOOL utf;
 PCRE2_UCHAR first_cu;
@@ -7202,9 +7214,29 @@ if (utf &&
 
   for (;;)
     {
+#ifndef ERLANG_INTEGRATION
     match_data->rc = PRIV(valid_utf)(mb->check_subject,
       length - (mb->check_subject - subject), &(match_data->startchar));
+#else
+    struct PRIV(valid_utf_ystate) *ystate;
+    
+    if (!extra_data || !extra_data->restart_data) {
+        ystate = NULL;
+    }
+    // else if (!(extra_data->flags & PCRE2_EXTRA_LOOP_LIMIT)) {
+    //     exec_context->valid_utf_ystate.cnt = 10;
+    //     ystate = NULL;
+    // }
+    else {
+        exec_context->valid_utf_ystate.yielded = 0;
+    restart_valid_utf:
+        ystate = &exec_context->valid_utf_ystate;
+        ystate->cnt = (int) extra_data->loop_limit;
+    }
+    match_data->rc = PRIV(yielding_valid_utf)(mb->check_subject,
+      length - (mb->check_subject - subject), &(match_data->startchar), ystate);
 
+#endif
     if (match_data->rc == 0) break;   /* Valid UTF string */
 
     /* Invalid UTF string. Adjust the offset to be an absolute offset in the
@@ -7812,8 +7844,14 @@ for(;;)
 
   /* OK, we can now run the match. If "hitend" is set afterwards, remember the
   first starting point for which a partial match was found. */
-
-  cb.start_match = (PCRE2_SIZE)(start_match - subject);
+  PCRE2_SIZE tmp = (PCRE2_SIZE)(start_match - subject);
+#ifdef ERLANG_INTEGRATION
+#undef start_match
+#endif
+  cb.start_match = tmp;
+#ifdef ERLANG_INTEGRATION
+#define start_match (exec_context->Xstart_match)
+#endif
   cb.callout_flags |= PCRE2_CALLOUT_STARTMATCH;
 
   mb->start_used_ptr = start_match;
@@ -7845,7 +7883,7 @@ for(;;)
       return PCRE2_ERROR_LOOP_LIMIT;
   RESTART_INTERRUPTED:
       mb->loop_limit = extra_data->loop_limit;
-      rc = match(NULL,NULL,NULL,0,md,NULL,0);
+      rc = match(NULL,NULL,0,0,NULL,mb);
       *extra_data->loop_counter_return = 
 	  (extra_data->loop_limit - mb->loop_limit);
   }
@@ -8122,18 +8160,18 @@ return match_data->rc;
 #undef re
 #undef frame_zero
 
-void erts_pcre_free_restart_data(void *restart_data) {
-  PcreExecContext *top = (PcreExecContext *) restart_data;
-  /* We might be done, or we might not, so there might be some saved match_states here */
-  if (top != NULL) {
-    match_block *mb = top->Xmb;
-    if (top->Xusing_temporary_offsets && mb->offset_vector != NULL) {
-	(PUBL(free))(mb->offset_vector);
-    }
-    release_match_heapframes(&(top->Xframe_zero));
-    (PUBL(free))(top);
-  }
-}
+// void erts_pcre_free_restart_data(void *restart_data) {
+//   PcreExecContext *top = (PcreExecContext *) restart_data;
+//   /* We might be done, or we might not, so there might be some saved match_states here */
+//   if (top != NULL) {
+//     match_block *mb = top->Xmb;
+//     if (top->Xusing_temporary_offsets && mb->offset_vector != NULL) {
+// 	(PUBL(free))(mb->offset_vector);
+//     }
+//     release_match_heapframes(&(top->Xframe_zero));
+//     (PUBL(free))(top);
+//   }
+// }
 #endif
 
 /* These #undefs are here to enable unity builds with CMake. */

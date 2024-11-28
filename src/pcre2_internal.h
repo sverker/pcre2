@@ -200,14 +200,16 @@ code that a non-static object is being referenced. */
 #define PRIV(name) _pcre2_##name
 #endif
 //#endif
-
+#ifdef ERLANG_INTEGRATION
 struct PRIV(valid_utf_ystate) { 
     unsigned int cnt;
     int length;
     int yielded;
     PCRE2_SPTR p;
 };
-
+extern int               PRIV(yielding_valid_utf)(PCRE2_SPTR, PCRE2_SIZE, PCRE2_SIZE *,
+                                                  struct PRIV(valid_utf_ystate) *);
+#endif
 /* When compiling for use with the Virtual Pascal compiler, these functions
 need to have their names changed. PCRE2 must be compiled with the -DVPCOMPAT
 option on the command line. */
