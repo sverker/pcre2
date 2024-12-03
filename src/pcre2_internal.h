@@ -200,7 +200,7 @@ code that a non-static object is being referenced. */
 #define PRIV(name) _pcre2_##name
 #endif
 //#endif
-#ifdef ERLANG_INTEGRATION
+#if defined(ERLANG_INTEGRATION) && !defined(PCRE2_BUILDING_PCRE2TEST)
 struct PRIV(valid_utf_ystate) { 
     unsigned int cnt;
     int length;

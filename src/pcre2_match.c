@@ -6603,8 +6603,8 @@ LOOP_COUNT_RETURN:
   EDEBUGF(("LOOP_COUNT_RETURN: %d",F->return_id));
   switch (F->return_id) 
     {
-// TODO create and include this after we added COST_CHK in the code
-//#include "pcre2_exec_loop_break_cases.inc"
+
+#include "pcre2_match_loop_break_cases.inc"
      default:
        EDEBUGF(("jump error in pcre match: label %d non-existent\n", F->return_id));
        return PCRE2_ERROR_INTERNAL;

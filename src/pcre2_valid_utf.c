@@ -95,7 +95,7 @@ int
 PRIV(valid_utf)(PCRE2_SPTR string, PCRE2_SIZE length, PCRE2_SIZE *erroroffset)
 {
 
-#if defined(ERLANG_INTEGRATION)
+#if defined(ERLANG_INTEGRATION) && !defined(PCRE2_BUILDING_PCRE2TEST)
     return PRIV(yielding_valid_utf)(string, length, erroroffset, NULL);
 }
 
@@ -105,7 +105,7 @@ PRIV(yielding_valid_utf)(PCRE2_SPTR string, PCRE2_SIZE length, PCRE2_SIZE *error
 #endif
 PCRE2_SPTR p;
 uint32_t c;
-#if defined(ERLANG_INTEGRATION)
+#if defined(ERLANG_INTEGRATION) && !defined(PCRE2_BUILDING_PCRE2TEST)
 register long cnt;
 
 if (!ystate) {
@@ -166,7 +166,7 @@ restart_length:
 for (p = string; length > 0; p++)
   {
   uint32_t ab, d;
-#if defined(ERLANG_INTEGRATION)
+#if defined(ERLANG_INTEGRATION) && !defined(PCRE2_BUILDING_PCRE2TEST)
 
   if (cnt > 0 && --cnt == 0) {
       /*
@@ -360,7 +360,7 @@ for (p = string; length > 0; p++)
     return (ab == 4)? PCRE2_ERROR_UTF8_ERR11 : PCRE2_ERROR_UTF8_ERR12;
     }
   }
-#if defined(ERLANG_INTEGRATION)
+#if defined(ERLANG_INTEGRATION) && !defined(PCRE2_BUILDING_PCRE2TEST)
   if (ystate) {
       /* Return with cnt set to amount consumed... */
       ystate->cnt -= cnt;
