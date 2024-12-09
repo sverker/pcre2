@@ -593,7 +593,7 @@ typedef struct pcre2_real_match_context {
   uint32_t match_limit;
   uint32_t depth_limit;
 #if defined(ERLANG_INTEGRATION)
-  unsigned long int loop_limit;
+  uint32_t loop_limit;
   unsigned long *loop_counter_return;
   void **restart_data; /* in/out */
   int restart_flags;
@@ -848,14 +848,12 @@ typedef struct heapframe {
   uint32_t capture_last;        /* Most recent capture */
   PCRE2_SIZE last_group_offset; /* Saved offset to most recent group frame */
   PCRE2_SIZE offset_top;        /* Offset after highest capture */
-#if defined(ERLANG_INTEGRATION)
-  int lgb;
-  int rgb;
-#endif
   PCRE2_SIZE ovector[131072];   /* Must be last in the structure */
 } heapframe;
 
 typedef struct match_local_variable_store{
+  PCRE2_SPTR start_ecode;
+  uint16_t top_bracket;
   heapframe *frames_top;  /* End of frames vector */
   heapframe *assert_accept_frame;  /* For passing back a frame with captures */
   PCRE2_SIZE frame_copy_size;   /* Amount to copy when creating a new frame */

@@ -413,7 +413,6 @@ $(PCRE2_GENINC): src/pcre2_match.c
 		N=`expr $$x + 100`; \
 		echo "case $$N: goto L_LOOP_COUNT_$${x};"; \
 	done > $(PCRE2_GENINC)
-	$(LN_S) $(abs_builddir)/$(PCRE2_GENINC) $(abs_srcdir)/$(PCRE2_GENINC)
 
 # The pcre2_ucptables.c file is #included by pcre2_tables.c
 

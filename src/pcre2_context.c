@@ -458,7 +458,30 @@ pcre2_set_offset_limit(pcre2_match_context *mcontext, PCRE2_SIZE limit)
 mcontext->offset_limit = limit;
 return 0;
 }
-
+PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
+pcre2_set_loop_limit(pcre2_match_context *mcontext, uint32_t limit)
+{
+mcontext->loop_limit = limit;
+return 0;
+}
+PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
+pcre2_set_restart_data(pcre2_match_context *mcontext, void **data)
+{
+mcontext->restart_data = data;
+return 0;
+}
+PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
+pcre2_set_restart_flags(pcre2_match_context *mcontext, uint32_t flags)
+{
+mcontext->restart_flags = flags;
+return 0;
+}
+PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
+pcre2_set_loop_counter_return(pcre2_match_context *mcontext, long unsigned int *counter)
+{
+mcontext->loop_counter_return = counter;
+return 0;
+}
 /* These functions became obsolete at release 10.30. The first is kept as a
 synonym for backwards compatibility. The second now does nothing. Exclude both
 from coverage reports. */
