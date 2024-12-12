@@ -6926,31 +6926,21 @@ PCRE2_SIZE heapframes_size;
 pcre2_callout_block cb;
 match_block *mb;
 /* End special swapped variables */
-pcre2_real_match_context *extra_data = (pcre2_real_match_context *)mcontext;
- if (extra_data != NULL && 
-     *(extra_data->restart_data) != NULL) {
-     /* we are restarting, every initialization is skipped and we jump directly into the loop */
-   exec_context = (PcreExecContext *) *(extra_data->restart_data);
+if (*(match_data->restart_data) != NULL) {
+   /* we are restarting, every initialization is skipped and we jump directly into the loop */
+   exec_context = (PcreExecContext *) *(match_data->restart_data);
    SWAPIN();
    if (exec_context->valid_utf_ystate.yielded){
        goto restart_valid_utf;
    }
    goto RESTART_INTERRUPTED;
  } else {
-   if (extra_data != NULL) {
-     exec_context = (PcreExecContext *) (extra_data->memctl.malloc(sizeof(PcreExecContext),
-        extra_data->memctl.memory_data));
-     *(extra_data->restart_data) = (void *) exec_context;
-     exec_context->valid_utf_ystate.yielded = 0;
-     exec_context->valid_utf_ystate.cnt = 0;
+   exec_context = (PcreExecContext *) (match_data->memctl.malloc(sizeof(PcreExecContext),
+                                                                 match_data->memctl.memory_data));
+   *(match_data->restart_data) = (void *) exec_context;
+   exec_context->valid_utf_ystate.yielded = 0;
+   exec_context->valid_utf_ystate.cnt = 0;
      /* need freeing by special routine from client */
-   } else {
-#if defined(ERLANG_INTEGRATION)
-     fprintf(stderr, "Unexpected execution path\n");
-     abort();
-#endif
-     exec_context = &internal_context;
-   }
    
    /* OK, no restart here, initialize variables instead */
    was_zero_terminated = 0;
@@ -7277,10 +7267,10 @@ if (utf &&
 #else
     struct PRIV(valid_utf_ystate) *ystate;
     
-    if (!extra_data || !extra_data->restart_data) {
+    if (!match_data->restart_data) {
         ystate = NULL;
     }
-    // else if (!(extra_data->flags & PCRE2_EXTRA_LOOP_LIMIT)) {
+    // else if (!(match_data->flags & PCRE2_EXTRA_LOOP_LIMIT)) {
     //     exec_context->valid_utf_ystate.cnt = 10;
     //     ystate = NULL;
     // }
@@ -7288,7 +7278,7 @@ if (utf &&
         exec_context->valid_utf_ystate.yielded = 0;
     restart_valid_utf:
         ystate = &exec_context->valid_utf_ystate;
-        ystate->cnt = (int) extra_data->loop_limit;
+        ystate->cnt = (int) match_data->loop_limit;
     }
     match_data->rc = PRIV(yielding_valid_utf)(mb->check_subject,
       length - (mb->check_subject - subject), &(match_data->startchar), ystate);
@@ -7297,7 +7287,7 @@ if (utf &&
     if (match_data->rc == 0) break;   /* Valid UTF string */
 #if defined(ERLANG_INTEGRATION)
       if (ystate && match_data->rc == PCRE2_ERROR_UTF8_YIELD) {
-        ERTS_UPDATE_CONSUMED(extra_data, NULL);
+        ERTS_UPDATE_CONSUMED(match_data, NULL);
         SWAPOUT();
         if (ystate->yielded) {
           return PCRE2_ERROR_LOOP_LIMIT;
@@ -7458,8 +7448,8 @@ mb->match_limit = (mcontext->match_limit < re->limit_match)?
 mb->match_limit_depth = (mcontext->depth_limit < re->limit_depth)?
   mcontext->depth_limit : re->limit_depth;
 #ifdef ERLANG_INTEGRATION
-        mb->loop_limit = mcontext->loop_limit;
-        if (mcontext->restart_data)
+        mb->loop_limit = match_data->loop_limit;
+        if (match_data->restart_data)
             mb->loop_limit -= exec_context->valid_utf_ystate.cnt;
         if (mb->loop_limit < 10)
             mb->loop_limit = 10; /* At least do something if we've come this far... */
@@ -7628,7 +7618,7 @@ for(;;)
         if (!ok)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(extra_data, mb);
+          ERTS_UPDATE_CONSUMED(match_data, mb);
           break;
           }
         }
@@ -7731,7 +7721,7 @@ for(;;)
         if (mb->partial == 0 && start_match >= mb->end_subject)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(extra_data, mb);
+          ERTS_UPDATE_CONSUMED(match_data, mb);
           break;
           }
         }
@@ -7791,7 +7781,7 @@ for(;;)
         if (mb->partial == 0 && start_match >= mb->end_subject)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(extra_data, mb);
+          ERTS_UPDATE_CONSUMED(match_data, mb);
           break;
           }
         }
@@ -7815,7 +7805,7 @@ for(;;)
       if (end_subject - start_match < re->minlength)
         {
         rc = MATCH_NOMATCH;
-        ERTS_UPDATE_CONSUMED(extra_data, mb);
+        ERTS_UPDATE_CONSUMED(match_data, mb);
         break;
         }
 
@@ -7890,7 +7880,7 @@ for(;;)
           if (p >= end_subject)
             {
             rc = MATCH_NOMATCH;
-            ERTS_UPDATE_CONSUMED(extra_data, mb);
+            ERTS_UPDATE_CONSUMED(match_data, mb);
             break;
             }
 
@@ -7911,7 +7901,7 @@ for(;;)
   if (start_match > bumpalong_limit)
     {
     rc = MATCH_NOMATCH;
-    ERTS_UPDATE_CONSUMED(extra_data, mb);
+    ERTS_UPDATE_CONSUMED(match_data, mb);
     break;
     }
 
@@ -7945,16 +7935,16 @@ for(;;)
   fprintf(stderr, "++ match() returned %d\n\n", rc);
 #endif
 #ifdef ERLANG_INTEGRATION
-  ERTS_UPDATE_CONSUMED(extra_data, mb);
+  ERTS_UPDATE_CONSUMED(match_data, mb);
   SWAPOUT();
   while(rc == PCRE2_ERROR_LOOP_LIMIT) {
       EDEBUGF(("Loop limit break detected"));
       return PCRE2_ERROR_LOOP_LIMIT;
   RESTART_INTERRUPTED:
-      mb->loop_limit = extra_data->loop_limit;
+      mb->loop_limit = match_data->loop_limit;
       rc = match(NULL,NULL,0,frame_size,match_data,mb);
-      *extra_data->loop_counter_return = 
-	  (extra_data->loop_limit - mb->loop_limit);
+      *match_data->loop_counter_return =
+	  (match_data->loop_limit - mb->loop_limit);
   }
   mb->state_save = NULL; /* So that next call to free_saved... does not crash */
 #endif
@@ -8228,13 +8218,13 @@ return match_data->rc;
 #undef frame_zero
 
 PCRE2_EXP_DEFN void PCRE2_CALL_CONVENTION
-pcre2_free_restart_data(pcre2_match_context *mcontext) {
-  PcreExecContext * top = (PcreExecContext *)mcontext->restart_data;
+pcre2_free_restart_data(pcre2_match_data *mdata) {
+  PcreExecContext * top = (PcreExecContext *)mdata->restart_data;
   /* We might be done, or we might not, so there might be some saved match_states here */
   if (top != NULL) {
-      mcontext->memctl.free(top,
-        mcontext->memctl.memory_data);
-      mcontext->restart_data = NULL;
+      mdata->memctl.free(top,
+        mdata->memctl.memory_data);
+      mdata->restart_data = NULL;
   }
 }
 #endif

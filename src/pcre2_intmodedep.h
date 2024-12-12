@@ -592,12 +592,6 @@ typedef struct pcre2_real_match_context {
   uint32_t heap_limit;
   uint32_t match_limit;
   uint32_t depth_limit;
-#if defined(ERLANG_INTEGRATION)
-  uint32_t loop_limit;
-  unsigned long *loop_counter_return;
-  void **restart_data; /* in/out */
-  int restart_flags;
-#endif
 } pcre2_real_match_context; //TODO add erts_ prefix
 
 /* The real convert context structure. */
@@ -674,6 +668,12 @@ typedef struct pcre2_real_match_data {
   uint8_t          flags;            /* Various flags */
   uint16_t         oveccount;        /* Number of pairs */
   int              rc;               /* The return code from the match */
+#if defined(ERLANG_INTEGRATION)
+  uint32_t loop_limit;
+  unsigned long *loop_counter_return;
+  void **restart_data; /* in/out */
+  int restart_flags;
+#endif
   PCRE2_SIZE       ovector[131072];  /* Must be last in the structure */
 } pcre2_real_match_data;
 

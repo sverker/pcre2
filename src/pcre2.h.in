@@ -638,13 +638,13 @@ PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
   pcre2_set_offset_limit(pcre2_match_context *, PCRE2_SIZE); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
-  pcre2_set_loop_limit(pcre2_match_context *, uint32_t); \
+  pcre2_set_loop_limit(pcre2_match_data *, uint32_t); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
-  pcre2_set_restart_data(pcre2_match_context *, void **); \
+  pcre2_set_restart_data(pcre2_match_data *, void **); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
-  pcre2_set_restart_flags(pcre2_match_context *, uint32_t); \
+  pcre2_set_restart_flags(pcre2_match_data *, uint32_t); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
-  pcre2_set_loop_counter_return(pcre2_match_context *, long unsigned int*); \
+  pcre2_set_loop_counter_return(pcre2_match_data *, long unsigned int*); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
   pcre2_set_recursion_limit(pcre2_match_context *, uint32_t); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
