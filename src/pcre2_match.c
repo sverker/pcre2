@@ -8225,12 +8225,11 @@ return match_data->rc;
 
 PCRE2_EXP_DEFN void PCRE2_CALL_CONVENTION
 pcre2_free_restart_data(pcre2_match_data *mdata) {
-  PcreExecContext * top = (PcreExecContext *)mdata->restart_data;
+  PcreExecContext * top = (PcreExecContext *) *mdata->restart_data;
   /* We might be done, or we might not, so there might be some saved match_states here */
   if (top != NULL) {
-      mdata->memctl.free(top,
-        mdata->memctl.memory_data);
-      mdata->restart_data = NULL;
+      mdata->memctl.free(top, mdata->memctl.memory_data);
+      *mdata->restart_data = NULL;
   }
 }
 #endif
