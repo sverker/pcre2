@@ -6793,7 +6793,9 @@ match_block *mb = &actual_match_block;
 if (subject == NULL && length == 0) subject = (PCRE2_SPTR)"";
 start_match = subject + start_offset;
 req_cu_ptr = start_match - 1;
-#else /* ERLANG_INTEGRATION */
+
+#else /******************** ERLANG_INTEGRATION *********************/
+
 #define actual_match_block exec_context->Xmatch_block
 
 #define SWAPIN() do {				                    \
@@ -6833,6 +6835,8 @@ req_cu_ptr = start_match - 1;
   start_offset = exec_context->Xstart_offset;   \
   match_data = exec_context->Xmatch_data;       \
   mcontext = exec_context->Xmcontext;           \
+  /* Adjust pointers */                         \
+  mb->cb = &cb;                                 \
 } while (0)
 
 #define SWAPOUT() do {				                  \
@@ -6872,6 +6876,8 @@ req_cu_ptr = start_match - 1;
   exec_context->Xstart_offset = start_offset;   \
   exec_context->Xmatch_data = match_data;       \
   exec_context->Xmcontext = mcontext;           \
+  /* Adjust pointers */                         \
+  exec_context->Xmb->cb = &exec_context->Xcb;    \
 } while (0)
 
 #define ERTS_UPDATE_CONSUMED(X, MB)                           \
