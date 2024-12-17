@@ -717,7 +717,7 @@ PCRE2_EXP_DECL PCRE2_SIZE *PCRE2_CALL_CONVENTION \
 PCRE2_EXP_DECL PCRE2_SIZE PCRE2_CALL_CONVENTION \
   pcre2_get_startchar(pcre2_match_data *); \
 PCRE2_EXP_DECL void PCRE2_CALL_CONVENTION \
-  pcre2_free_restart_data(pcre2_match_context *);
+  pcre2_free_restart_data(pcre2_match_data *);
 
 /* Convenience functions for handling matched substrings. */
 
