@@ -458,11 +458,15 @@ pcre2_set_offset_limit(pcre2_match_context *mcontext, PCRE2_SIZE limit)
 mcontext->offset_limit = limit;
 return 0;
 }
-PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
-pcre2_set_loop_limit(pcre2_match_data *mdata, uint32_t limit)
+PCRE2_EXP_DEFN void PCRE2_CALL_CONVENTION
+pcre2_set_loops_left(pcre2_match_data *mdata, int budget)
 {
-mdata->loop_limit = limit;
-return 0;
+mdata->loops_left = budget;
+}
+PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
+pcre2_get_loops_left(pcre2_match_data *mdata)
+{
+return mdata->loops_left;
 }
 PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
 pcre2_set_restart_data(pcre2_match_data *mdata, void **data)
@@ -474,12 +478,6 @@ PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
 pcre2_set_restart_flags(pcre2_match_data *mdata, uint32_t flags)
 {
 mdata->restart_flags = flags;
-return 0;
-}
-PCRE2_EXP_DEFN int PCRE2_CALL_CONVENTION
-pcre2_set_loop_counter_return(pcre2_match_data *mdata, long unsigned int *counter)
-{
-mdata->loop_counter_return = counter;
 return 0;
 }
 /* These functions became obsolete at release 10.30. The first is kept as a

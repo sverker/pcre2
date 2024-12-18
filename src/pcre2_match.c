@@ -569,23 +569,14 @@ remember the backtracking points. */
   goto MATCH_RECURSE;\
   L_##rb:;\
   }
-#ifdef ERLANG_INTEGRATION
-#define RRETURN(ra)\
-  {\
-  rrc = ra;\
-  if (LOOP_LIMIT != 0) \
-  { \
-    mb->loop_limit -= LOOP_COUNT; \
-  } \
-  goto RETURN_SWITCH;\
-  }
-#else
+
 #define RRETURN(ra)\
   {\
   rrc = ra;\
   goto RETURN_SWITCH;\
   }
-#endif
+
+
 
 /*************************************************
 *         Match from current position            *
@@ -653,34 +644,31 @@ BOOL prev_is_word;      /* Used in "word" tests */
 #if defined(ERLANG_INTEGRATION)
 int lgb;
 int rgb;
-#endif
-#ifdef ERLANG_INTEGRATION
-#define LOOP_COUNT loop_count
-#define LOOP_LIMIT loop_limit
 #ifdef ERLANG_DEBUG
 #define EDEBUGF(X) edebug_printf X
 #else
 #define EDEBUGF(X)
 #endif
-#define COST(N) (LOOP_COUNT += (N))
+#define COST(N) (match_data->loops_left -= (N))
 #define LABEL_XCAT(A,B) A##B
 #define LABEL_CAT(A,B) LABEL_XCAT(A,B)
 
 #define COST_CHK(N) 				\
 do {						\
-  LOOP_COUNT += (N);				\
-  if (LOOP_LIMIT != 0) {			\
-    if (LOOP_COUNT > LOOP_LIMIT) {              \
+  match_data->loops_left -= (N);	        \
+  if (match_data->loops_left <= 0) {            \
       Freturn_id = __LINE__ + 100;	        \
       goto LOOP_COUNT_BREAK;			\
       LABEL_CAT(L_LOOP_COUNT_,__LINE__):	\
       ;                                         \
-    }						\
   }						\
 } while (0)
 
-register int loop_count = 0;
-register int loop_limit = mb->loop_limit;
+#else // !ERLANG_INTEGRATION
+
+#define COST(N)
+#define COST_CHK(N)
+
 #endif
 
 /* UTF and UCP flags */
@@ -698,19 +686,16 @@ copied when a new frame is created. */
 frame_copy_size = frame_size - offsetof(heapframe, eptr);
 
 /* Set up the first frame and the end of the frames vector. */
+
 #ifdef ERLANG_INTEGRATION
 if (mb->state_save) {
   F = mb->state_save;
   EDEBUGF(("Break restore!"));
   goto LOOP_COUNT_RETURN;
 }
-F = match_data->heapframes;
-#else
-#define COST(N)
-#define COST_CHK(N)
-F = match_data->heapframes;
 #endif
 
+F = match_data->heapframes;
 frames_top = (heapframe *)((char *)F + match_data->heapframes_size);
 
 Frdepth = 0;                        /* "Recursion" depth */
@@ -6647,7 +6632,6 @@ LOOP_COUNT_BREAK:
     store->elgb = lgb;
     store->ergb = rgb;
     mb->state_save = newframe;
-    mb->loop_limit = 0;
     EDEBUGF(("Break loop!"));
     return PCRE2_ERROR_LOOP_LIMIT;
   }
@@ -6699,17 +6683,6 @@ typedef struct {
     pcre2_match_context *Xmcontext;
 } PcreExecContext;
 
-void ERTS_UPDATE_CONSUMED(PcreExecContext* ctx,
-                          pcre2_match_data* mdata,
-                          match_block* mb)
-{
-    unsigned long consumed = ctx->valid_utf_ystate.cnt;
-    ctx->valid_utf_ystate.cnt = 0;
-    if (mb) {
-        consumed += mdata->loop_limit - mb->loop_limit;
-    }
-    *(mdata->loop_counter_return) = consumed;
-}
 #endif // ERLANG_INTEGRATION
 
 
@@ -6743,7 +6716,6 @@ pcre2_match(const pcre2_code *code, PCRE2_SPTR subject, PCRE2_SIZE length,
   pcre2_match_context *mcontext)
 {
 #ifndef ERLANG_INTEGRATION
-#define ERTS_UPDATE_CONSUMED(ECTX,MDATA,MB) do {} while(0)
 int rc;
 int was_zero_terminated = 0;
 const uint8_t *start_bits = NULL;
@@ -6800,12 +6772,6 @@ macro is used below, and it expects NLBLOCK to be defined as a pointer. */
 pcre2_callout_block cb;
 match_block actual_match_block;
 match_block *mb = &actual_match_block;
-
-/* Recognize NULL, length 0 as an empty string. */
-
-if (subject == NULL && length == 0) subject = (PCRE2_SPTR)"";
-start_match = subject + start_offset;
-req_cu_ptr = start_match - 1;
 
 #else /******************** ERLANG_INTEGRATION *********************/
 
@@ -6944,7 +6910,6 @@ if (*(match_data->restart_data) != NULL) {
    exec_context = &internal_context;
    *(match_data->restart_data) = NULL;
    exec_context->valid_utf_ystate.yielded = 0;
-   exec_context->valid_utf_ystate.cnt = 0;
    
    /* OK, no restart here, initialize variables instead */
    was_zero_terminated = 0;
@@ -6960,15 +6925,16 @@ if (*(match_data->restart_data) != NULL) {
    ucp = FALSE;
    fragment_options = 0;
    mb = &(exec_context->Xactual_match_block);
-   start_match = (PCRE2_SPTR)subject + start_offset;
    start_partial = NULL;
    match_partial = NULL;
-   req_cu_ptr = start_match - 1;
 
    mb->state_save = NULL; 
-   if (subject == NULL && length == 0) subject = (PCRE2_SPTR)"";
 }
 #endif /* ERLANG_INTEGRATION */
+
+/* Recognize NULL, length 0 as an empty string. */
+
+if (subject == NULL && length == 0) subject = (PCRE2_SPTR)"";
 
 /* Plausibility checks */
 
@@ -6976,6 +6942,8 @@ if ((options & ~PUBLIC_MATCH_OPTIONS) != 0) return PCRE2_ERROR_BADOPTION;
 if (code == NULL || subject == NULL || match_data == NULL)
   return PCRE2_ERROR_NULL;
 
+start_match = subject + start_offset;
+req_cu_ptr = start_match - 1;
 if (length == PCRE2_ZERO_TERMINATED)
   {
   length = PRIV(strlen)(subject);
@@ -7269,34 +7237,24 @@ if (utf &&
     match_data->rc = PRIV(valid_utf)(mb->check_subject,
       length - (mb->check_subject - subject), &(match_data->startchar));
 #else
-    struct PRIV(valid_utf_ystate) *ystate;
-    
-    if (!match_data->restart_data) {
-        ystate = NULL;
-    }
-    // else if (!(match_data->flags & PCRE2_EXTRA_LOOP_LIMIT)) {
-    //     exec_context->valid_utf_ystate.cnt = 10;
-    //     ystate = NULL;
-    // }
-    else {
-        exec_context->valid_utf_ystate.yielded = 0;
-    restart_valid_utf:
-        ystate = &exec_context->valid_utf_ystate;
-        ystate->cnt = (int) match_data->loop_limit;
-    }
+
+    exec_context->valid_utf_ystate.yielded = 0;
+restart_valid_utf:
+    exec_context->valid_utf_ystate.loops_left_p = &(match_data->loops_left);
+
     match_data->rc = PRIV(yielding_valid_utf)(mb->check_subject,
-      length - (mb->check_subject - subject), &(match_data->startchar), ystate);
+                                              length - (mb->check_subject - subject),
+                                              &(match_data->startchar),
+                                              &(exec_context->valid_utf_ystate));
 
 #endif
     if (match_data->rc == 0) break;   /* Valid UTF string */
+
 #if defined(ERLANG_INTEGRATION)
-      if (ystate && match_data->rc == PCRE2_ERROR_UTF8_YIELD) {
-        ERTS_UPDATE_CONSUMED(exec_context, match_data, NULL);
+    if (match_data->rc == PCRE2_ERROR_UTF8_YIELD) {
         SWAPOUT();
-        if (ystate->yielded) {
-          return PCRE2_ERROR_LOOP_LIMIT;
-        }
-      }
+        return PCRE2_ERROR_LOOP_LIMIT;
+    }
 #endif
     /* Invalid UTF string. Adjust the offset to be an absolute offset in the
     whole string. If we are handling invalid UTF strings, set end_subject to
@@ -7325,9 +7283,6 @@ if (utf &&
     /* Otherwise, set the not end of line option, and do the match. */
     else
       {
-#if defined(ERLANG_INTEGRATION)
-    exec_context->valid_utf_ystate.cnt = 0;
-#endif
       fragment_options = PCRE2_NOTEOL;
       break;
       }
@@ -7451,13 +7406,6 @@ mb->match_limit = (mcontext->match_limit < re->limit_match)?
 
 mb->match_limit_depth = (mcontext->depth_limit < re->limit_depth)?
   mcontext->depth_limit : re->limit_depth;
-#ifdef ERLANG_INTEGRATION
-        mb->loop_limit = match_data->loop_limit;
-        if (match_data->restart_data)
-            mb->loop_limit -= exec_context->valid_utf_ystate.cnt;
-        if (mb->loop_limit < 10)
-            mb->loop_limit = 10; /* At least do something if we've come this far... */
-#endif
 /* If a pattern has very many capturing parentheses, the frame size may be very
 large. Set the initial frame vector size to ensure that there are at least 10
 available frames, but enforce a minimum of START_FRAMES_SIZE. If this is
@@ -7622,7 +7570,6 @@ for(;;)
         if (!ok)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
           break;
           }
         }
@@ -7725,7 +7672,6 @@ for(;;)
         if (mb->partial == 0 && start_match >= mb->end_subject)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
           break;
           }
         }
@@ -7785,7 +7731,6 @@ for(;;)
         if (mb->partial == 0 && start_match >= mb->end_subject)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
           break;
           }
         }
@@ -7809,7 +7754,6 @@ for(;;)
       if (end_subject - start_match < re->minlength)
         {
         rc = MATCH_NOMATCH;
-        ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
         break;
         }
 
@@ -7884,7 +7828,6 @@ for(;;)
           if (p >= end_subject)
             {
             rc = MATCH_NOMATCH;
-            ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
             break;
             }
 
@@ -7905,15 +7848,13 @@ for(;;)
   if (start_match > bumpalong_limit)
     {
     rc = MATCH_NOMATCH;
-    ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
     break;
     }
 
   /* OK, we can now run the match. If "hitend" is set afterwards, remember the
   first starting point for which a partial match was found. */
-  PCRE2_SIZE tmp = (PCRE2_SIZE)(start_match - subject);
 
-  cb.start_match = tmp;
+  cb.start_match = (PCRE2_SIZE)(start_match - subject);
 
   cb.callout_flags |= PCRE2_CALLOUT_STARTMATCH;
 
@@ -7939,16 +7880,12 @@ for(;;)
   fprintf(stderr, "++ match() returned %d\n\n", rc);
 #endif
 #ifdef ERLANG_INTEGRATION
-  ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
   while(rc == PCRE2_ERROR_LOOP_LIMIT) {
       EDEBUGF(("Loop limit break detected"));
       SWAPOUT();
       return PCRE2_ERROR_LOOP_LIMIT;
   RESTART_INTERRUPTED:
-      mb->loop_limit = match_data->loop_limit;
       rc = match(NULL,NULL,0,frame_size,match_data,mb);
-      *match_data->loop_counter_return =
-	  (match_data->loop_limit - mb->loop_limit);
   }
   mb->state_save = NULL; /* So that next call to free_saved... does not crash */
 #endif

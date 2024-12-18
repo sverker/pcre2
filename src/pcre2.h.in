@@ -637,14 +637,14 @@ PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
   pcre2_set_match_limit(pcre2_match_context *, uint32_t); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
   pcre2_set_offset_limit(pcre2_match_context *, PCRE2_SIZE); \
+PCRE2_EXP_DECL void PCRE2_CALL_CONVENTION \
+  pcre2_set_loops_left(pcre2_match_data *, int); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
-  pcre2_set_loop_limit(pcre2_match_data *, uint32_t); \
-PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
+ pcre2_get_loops_left(pcre2_match_data *);	       \
+PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION	       \
   pcre2_set_restart_data(pcre2_match_data *, void **); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
   pcre2_set_restart_flags(pcre2_match_data *, uint32_t); \
-PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
-  pcre2_set_loop_counter_return(pcre2_match_data *, long unsigned int*); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
   pcre2_set_recursion_limit(pcre2_match_context *, uint32_t); \
 PCRE2_EXP_DECL int PCRE2_CALL_CONVENTION \
@@ -911,8 +911,8 @@ pcre2_compile are called by application code. */
 #define pcre2_set_glob_escape                 PCRE2_SUFFIX(pcre2_set_glob_escape_)
 #define pcre2_set_glob_separator              PCRE2_SUFFIX(pcre2_set_glob_separator_)
 #define pcre2_set_heap_limit                  PCRE2_SUFFIX(pcre2_set_heap_limit_)
-#define pcre2_set_loop_counter_return         PCRE2_SUFFIX(pcre2_set_loop_counter_return_)
-#define pcre2_set_loop_limit                  PCRE2_SUFFIX(pcre2_set_loop_limit_)
+#define pcre2_get_loops_left                  PCRE2_SUFFIX(pcre2_get_loops_left_)
+#define pcre2_set_loops_left                  PCRE2_SUFFIX(pcre2_set_loops_left_)
 #define pcre2_set_match_limit                 PCRE2_SUFFIX(pcre2_set_match_limit_)
 #define pcre2_set_max_varlookbehind           PCRE2_SUFFIX(pcre2_set_max_varlookbehind_)
 #define pcre2_set_max_pattern_length          PCRE2_SUFFIX(pcre2_set_max_pattern_length_)

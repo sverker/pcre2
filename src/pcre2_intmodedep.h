@@ -669,8 +669,7 @@ typedef struct pcre2_real_match_data {
   uint16_t         oveccount;        /* Number of pairs */
   int              rc;               /* The return code from the match */
 #if defined(ERLANG_INTEGRATION)
-  uint32_t loop_limit;
-  unsigned long *loop_counter_return;
+  int32_t loops_left;
   void **restart_data; /* in/out */
   int restart_flags;
 #endif
@@ -907,7 +906,6 @@ doing traditional NFA matching (pcre2_match() and friends). */
 
 typedef struct match_block {
 #if defined(ERLANG_INTEGRATION)
-  unsigned long int loop_limit;
   void *state_save;
 #endif
   pcre2_memctl memctl;            /* For general use */

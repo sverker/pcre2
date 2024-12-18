@@ -202,7 +202,7 @@ code that a non-static object is being referenced. */
 //#endif
 #if defined(ERLANG_INTEGRATION) && !defined(PCRE2_BUILDING_PCRE2TEST)
 struct PRIV(valid_utf_ystate) { 
-    unsigned int cnt;
+    int32_t *loops_left_p;
     int length;
     int yielded;
     PCRE2_SPTR p;
