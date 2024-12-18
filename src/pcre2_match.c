@@ -6684,7 +6684,7 @@ typedef struct {
     PCRE2_SIZE Xframe_size;
     PCRE2_SIZE Xheapframes_size;
     pcre2_callout_block Xcb;
-    match_block Xmatch_block;
+    match_block Xactual_match_block;
     match_block *Xmb;
 
     /* for yield in valid_utf() */
@@ -6698,7 +6698,20 @@ typedef struct {
     pcre2_match_data *Xmatch_data;
     pcre2_match_context *Xmcontext;
 } PcreExecContext;
-#endif  
+
+void ERTS_UPDATE_CONSUMED(PcreExecContext* ctx,
+                          pcre2_match_data* mdata,
+                          match_block* mb)
+{
+    unsigned long consumed = ctx->valid_utf_ystate.cnt;
+    ctx->valid_utf_ystate.cnt = 0;
+    if (mb) {
+        consumed += mdata->loop_limit - mb->loop_limit;
+    }
+    *(mdata->loop_counter_return) = consumed;
+}
+#endif // ERLANG_INTEGRATION
+
 
 /*************************************************
 *           Match a Regular Expression           *
@@ -6730,7 +6743,7 @@ pcre2_match(const pcre2_code *code, PCRE2_SPTR subject, PCRE2_SIZE length,
   pcre2_match_context *mcontext)
 {
 #ifndef ERLANG_INTEGRATION
-#define ERTS_UPDATE_CONSUMED(X,MB)
+#define ERTS_UPDATE_CONSUMED(ECTX,MDATA,MB) do {} while(0)
 int rc;
 int was_zero_terminated = 0;
 const uint8_t *start_bits = NULL;
@@ -6796,8 +6809,6 @@ req_cu_ptr = start_match - 1;
 
 #else /******************** ERLANG_INTEGRATION *********************/
 
-#define actual_match_block exec_context->Xmatch_block
-
 #define SWAPIN() do {				                    \
   rc = exec_context->Xrc;			                    \
   was_zero_terminated = exec_context->Xwas_zero_terminated;	\
@@ -6840,6 +6851,13 @@ req_cu_ptr = start_match - 1;
 } while (0)
 
 #define SWAPOUT() do {				                  \
+  if (exec_context == &internal_context) {                            \
+    exec_context = (PcreExecContext *)                                \
+        (match_data->memctl.malloc(sizeof(PcreExecContext),           \
+                                   match_data->memctl.memory_data));  \
+    *(match_data->restart_data) = (void *) exec_context;              \
+    *exec_context = internal_context;                                 \
+  }                                                                   \
   exec_context->Xrc = rc;			                  \
   exec_context->Xwas_zero_terminated = was_zero_terminated;	\
   exec_context->Xstart_bits = start_bits;	      \
@@ -6869,7 +6887,6 @@ req_cu_ptr = start_match - 1;
   exec_context->Xframe_size = frame_size;	\
   exec_context->Xheapframes_size = heapframes_size;	\
   exec_context->Xcb = cb;			                  \
-  exec_context->Xmb = mb;			                  \
   /* Parameters */                              \
   exec_context->Xsubject = subject;             \
   exec_context->Xlength = length;               \
@@ -6877,27 +6894,10 @@ req_cu_ptr = start_match - 1;
   exec_context->Xmatch_data = match_data;       \
   exec_context->Xmcontext = mcontext;           \
   /* Adjust pointers */                         \
-  exec_context->Xmb->cb = &exec_context->Xcb;    \
+  exec_context->Xmb = &(exec_context->Xactual_match_block);  \
+  exec_context->Xmb->cb = &(exec_context->Xcb);    \
 } while (0)
 
-#define ERTS_UPDATE_CONSUMED(X, MB)                           \
-do {                                                          \
-  unsigned long consumed__;                                   \
-  if (!(X)->restart_data) {                                   \
-      consumed__ = 0;                                         \
-  }                                                           \
-  else {                                                      \
-      PcreExecContext *ctx__ = (PcreExecContext *)            \
-          (*(X)->restart_data);                               \
-      consumed__ = ctx__->valid_utf_ystate.cnt;               \
-      ctx__->valid_utf_ystate.cnt = 0;                        \
-  }                                                           \
-  if ((MB)) {                                                 \
-      match_block *mb__ = (MB);                               \
-      consumed__ += (X)->loop_limit - mb__->loop_limit;       \
-  }                                                           \
-  *((X)->loop_counter_return) = consumed__;                   \
-} while (0)
 PcreExecContext *exec_context;
 PcreExecContext internal_context;
 int rc;
@@ -6941,12 +6941,10 @@ if (*(match_data->restart_data) != NULL) {
    }
    goto RESTART_INTERRUPTED;
  } else {
-   exec_context = (PcreExecContext *) (match_data->memctl.malloc(sizeof(PcreExecContext),
-                                                                 match_data->memctl.memory_data));
-   *(match_data->restart_data) = (void *) exec_context;
+   exec_context = &internal_context;
+   *(match_data->restart_data) = NULL;
    exec_context->valid_utf_ystate.yielded = 0;
    exec_context->valid_utf_ystate.cnt = 0;
-     /* need freeing by special routine from client */
    
    /* OK, no restart here, initialize variables instead */
    was_zero_terminated = 0;
@@ -6961,7 +6959,7 @@ if (*(match_data->restart_data) != NULL) {
    utf = FALSE;
    ucp = FALSE;
    fragment_options = 0;
-   mb = &actual_match_block;
+   mb = &(exec_context->Xactual_match_block);
    start_match = (PCRE2_SPTR)subject + start_offset;
    start_partial = NULL;
    match_partial = NULL;
@@ -7293,7 +7291,7 @@ if (utf &&
     if (match_data->rc == 0) break;   /* Valid UTF string */
 #if defined(ERLANG_INTEGRATION)
       if (ystate && match_data->rc == PCRE2_ERROR_UTF8_YIELD) {
-        ERTS_UPDATE_CONSUMED(match_data, NULL);
+        ERTS_UPDATE_CONSUMED(exec_context, match_data, NULL);
         SWAPOUT();
         if (ystate->yielded) {
           return PCRE2_ERROR_LOOP_LIMIT;
@@ -7624,7 +7622,7 @@ for(;;)
         if (!ok)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(match_data, mb);
+          ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
           break;
           }
         }
@@ -7727,7 +7725,7 @@ for(;;)
         if (mb->partial == 0 && start_match >= mb->end_subject)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(match_data, mb);
+          ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
           break;
           }
         }
@@ -7787,7 +7785,7 @@ for(;;)
         if (mb->partial == 0 && start_match >= mb->end_subject)
           {
           rc = MATCH_NOMATCH;
-          ERTS_UPDATE_CONSUMED(match_data, mb);
+          ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
           break;
           }
         }
@@ -7811,7 +7809,7 @@ for(;;)
       if (end_subject - start_match < re->minlength)
         {
         rc = MATCH_NOMATCH;
-        ERTS_UPDATE_CONSUMED(match_data, mb);
+        ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
         break;
         }
 
@@ -7886,7 +7884,7 @@ for(;;)
           if (p >= end_subject)
             {
             rc = MATCH_NOMATCH;
-            ERTS_UPDATE_CONSUMED(match_data, mb);
+            ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
             break;
             }
 
@@ -7907,7 +7905,7 @@ for(;;)
   if (start_match > bumpalong_limit)
     {
     rc = MATCH_NOMATCH;
-    ERTS_UPDATE_CONSUMED(match_data, mb);
+    ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
     break;
     }
 
@@ -7941,10 +7939,10 @@ for(;;)
   fprintf(stderr, "++ match() returned %d\n\n", rc);
 #endif
 #ifdef ERLANG_INTEGRATION
-  ERTS_UPDATE_CONSUMED(match_data, mb);
-  SWAPOUT();
+  ERTS_UPDATE_CONSUMED(exec_context, match_data, mb);
   while(rc == PCRE2_ERROR_LOOP_LIMIT) {
       EDEBUGF(("Loop limit break detected"));
+      SWAPOUT();
       return PCRE2_ERROR_LOOP_LIMIT;
   RESTART_INTERRUPTED:
       mb->loop_limit = match_data->loop_limit;
